@@ -1,4 +1,9 @@
-# Byte-compiled / optimized / DLL files
+# Adem's Git Ignore
+train/train-70_.pkl
+val/validation-10_.pkl
+
+
+n# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
 *$py.class
