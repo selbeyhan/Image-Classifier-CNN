@@ -1,15 +1,13 @@
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
 
-# -----------------------------
-# Model Definition
-# -----------------------------
 
 class MyCNN(nn.Module):
     """
-    Simple but strong CNN for 64x64 RGB images, 15 classes.
-    Uses only: Conv2d, MaxPool2d, BatchNorm2d, Dropout, Flatten (via nn.Flatten), Linear.
-    This respects the assignment constraints.
+    CNN for 64x64 RGB images, 15 classes.
+    Uses ONLY Conv2d, Pooling, BatchNorm, Dropout, Flatten, Dense.
+    (Matches assignment constraints.)
     """
     def __init__(self, num_classes: int = 15):
         super(MyCNN, self).__init__()
@@ -49,7 +47,7 @@ class MyCNN(nn.Module):
             nn.MaxPool2d(kernel_size=2, stride=2),
         )
 
-        # 64x64 input, after 4 pools (x2 each) -> 4x4 spatial, 256 channels
+        # After 4 pools: 64 -> 32 -> 16 -> 8 -> 4
         self.classifier = nn.Sequential(
             nn.Flatten(),
             nn.Linear(256 * 4 * 4, 512),
@@ -64,14 +62,11 @@ class MyCNN(nn.Module):
         return x
 
 
-# -----------------------------
-# Load Function
-# -----------------------------
-
-def load_model(weight_path: str = "model.pth", device: str | torch.device = "cpu") -> MyCNN:
+def load_model(weight_path: str = "model.pth",
+               device: str | torch.device = "cpu") -> MyCNN:
     """
-    Load the trained model from a .pth file.
-    The instructor will call this with their path to model.pth.
+    Load the trained model from model.pth.
+    The instructor will call this.
     """
     if isinstance(device, str):
         device = torch.device(device)
@@ -84,19 +79,13 @@ def load_model(weight_path: str = "model.pth", device: str | torch.device = "cpu
     return model
 
 
-# -----------------------------
-# Predict Function
-# -----------------------------
-
 @torch.no_grad()
-def predict(model: nn.Module, dataloader, device: str | torch.device = "cpu"):
+def predict(model: nn.Module,
+            dataloader: DataLoader,
+            device: str | torch.device = "cpu"):
     """
-    Predict class indices for all images in the given dataloader.
-    Returns: list of int (predicted class indices).
-
-    We handle both:
-      - dataloader yielding (images, labels)
-      - dataloader yielding images only
+    Given a dataloader, return a list of predicted class indices.
+    Instructor will call this on their hidden test set.
     """
     if isinstance(device, str):
         device = torch.device(device)
@@ -107,6 +96,7 @@ def predict(model: nn.Module, dataloader, device: str | torch.device = "cpu"):
     all_preds = []
 
     for batch in dataloader:
+        # Handle (images, labels) or just images
         if isinstance(batch, (list, tuple)):
             images = batch[0]
         else:

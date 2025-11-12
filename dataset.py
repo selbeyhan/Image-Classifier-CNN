@@ -1,37 +1,53 @@
-import torch
-from torch.utils.data import Dataset
 import pickle
 import numpy as np
+import torch
+from torch.utils.data import Dataset
+from PIL import Image
+
 
 class PKLDataset(Dataset):
+    """
+    Dataset for Tiny ImageNet subset stored as a .pkl dict:
+    {
+        'images': np.ndarray of shape (N, 64, 64, 3),
+        'labels': list of length N,
+        'class_names': dict,
+        'all_classes': list
+    }
+    """
     def __init__(self, pkl_path, transform=None):
         super().__init__()
 
         with open(pkl_path, "rb") as f:
             data = pickle.load(f)
 
-        # data should contain "images" and "labels"
-        self.images = data["images"]  # shape: (N, 64, 64, 3)
-        self.labels = data["labels"]  # shape: (N,)
+        self.images = data["images"]      # (N, 64, 64, 3)
+        self.labels = data["labels"]      # list, length N
         self.transform = transform
 
-        # convert to uint8 if necessary
-        if self.images.dtype != np.uint8:
-            self.images = self.images.astype(np.uint8)
+        assert len(self.images) == len(self.labels), \
+            "Images and labels length mismatch"
 
     def __len__(self):
-        return len(self.images)
+        return len(self.labels)
 
     def __getitem__(self, idx):
-        img = self.images[idx]
-        label = self.labels[idx]
+        img = self.images[idx]     # numpy array HWC (64,64,3)
+        label = self.labels[idx]   # usually an int
 
-        # Convert numpy HWC -> PyTorch CHW
-        img = torch.tensor(img).permute(2, 0, 1)  # (3, 64, 64)
+        # Ensure uint8 then convert to PIL Image
+        if not isinstance(img, np.ndarray):
+            img = np.array(img)
 
-        img = img.float() / 255.0  # normalize to 0–1
+        if img.dtype != np.uint8:
+            img = img.astype(np.uint8)
 
-        if self.transform:
+        img = Image.fromarray(img)  # PIL image
+
+        if self.transform is not None:
             img = self.transform(img)
 
-        return img, torch.tensor(label)
+        # CrossEntropyLoss expects targets as LongTensor
+        label = torch.tensor(label, dtype=torch.long)
+
+        return img, label

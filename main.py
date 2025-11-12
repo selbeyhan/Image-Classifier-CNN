@@ -1,13 +1,13 @@
-import os
 import random
 import numpy as np
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
+from torchvision import transforms
 
-from model import MyCNN  # import your model class
+from dataset import PKLDataset
+from model import MyCNN
 
 
 # -----------------------------
@@ -24,10 +24,11 @@ def set_seed(seed: int = 42):
 
 
 # -----------------------------
-# Data Loaders
+# Data Loaders for PKL data
 # -----------------------------
 
-def get_dataloaders(train_dir: str = "train", val_dir: str = "val",
+def get_dataloaders(train_pkl: str = "train.pkl",
+                    val_pkl: str = "val.pkl",
                     batch_size: int = 64):
 
     # Data augmentation for training
@@ -36,31 +37,31 @@ def get_dataloaders(train_dir: str = "train", val_dir: str = "val",
         transforms.RandomRotation(15),
         transforms.RandomResizedCrop(64, scale=(0.8, 1.0)),
         transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-        transforms.ToTensor(),
+        transforms.ToTensor(),  # converts [0,255] PIL -> [0,1] tensor
     ])
 
-    # Validation: no heavy augmentation
+    # Validation: just resize+ToTensor
     val_transform = transforms.Compose([
         transforms.Resize((64, 64)),
         transforms.ToTensor(),
     ])
 
-    train_dataset = datasets.ImageFolder(train_dir, transform=train_transform)
-    val_dataset = datasets.ImageFolder(val_dir, transform=val_transform)
+    train_dataset = PKLDataset(train_pkl, transform=train_transform)
+    val_dataset   = PKLDataset(val_pkl,   transform=val_transform)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size,
                               shuffle=True, num_workers=2, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size,
-                            shuffle=False, num_workers=2, pin_memory=True)
+    val_loader   = DataLoader(val_dataset, batch_size=batch_size,
+                              shuffle=False, num_workers=2, pin_memory=True)
 
     print(f"Loaded {len(train_dataset)} training images, "
           f"{len(val_dataset)} validation images.")
-    print(f"Number of classes: {len(train_dataset.classes)}")
+
     return train_loader, val_loader
 
 
 # -----------------------------
-# Train & Eval
+# Train & Evaluate
 # -----------------------------
 
 def train_one_epoch(model, dataloader, optimizer, criterion, device):
@@ -123,19 +124,22 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device:", device)
 
+    # Adjust these if your files are named differently
     train_loader, val_loader = get_dataloaders(
-        train_dir="train",
-        val_dir="val",
+        train_pkl="train.pkl",
+        val_pkl="val.pkl",
         batch_size=64
     )
 
-    num_classes = len(train_loader.dataset.classes)
+    num_classes = 15  # per assignment: 15 classes
     model = MyCNN(num_classes=num_classes).to(device)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(),
-                                 lr=1e-3,
-                                 weight_decay=1e-4)
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=1e-3,
+        weight_decay=1e-4
+    )
 
     num_epochs = 40
     best_val_acc = 0.0
