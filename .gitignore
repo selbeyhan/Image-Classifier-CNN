@@ -1,7 +1,6 @@
 # Adem's Git Ignore
-train/train-70_.pkl
-val/validation-10_.pkl
-
+train.pkl
+val.pkl
 
 n# Byte-compiled / optimized / DLL files
 __pycache__/
