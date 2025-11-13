@@ -15,3 +15,6 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 3. Make a model.pth file in the directory
 4. Run main.py, this uses the best model we have to use
 python3 main.py
+
+5. After done with a model, put model and checkpoint files into the models folder
+

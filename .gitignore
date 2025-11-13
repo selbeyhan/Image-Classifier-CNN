@@ -1,8 +1,8 @@
 # Adem's Git Ignore
 train.pkl
 val.pkl
-model.pth
 checkpoint.pth
+model.pth
 
 n# Byte-compiled / optimized / DLL files
 __pycache__/
