@@ -41,19 +41,24 @@ def get_dataloaders(train_pkl: str = "train.pkl",
                     val_pkl: str = "val.pkl",
                     batch_size: int = 64):
 
+    imagenet_mean = [0.485, 0.456, 0.406]
+    imagenet_std  = [0.229, 0.224, 0.225]
+
     # Data augmentation for training
     train_transform = transforms.Compose([
+        transforms.RandomResizedCrop(64, scale=(0.6, 1.0)),
         transforms.RandomHorizontalFlip(),
         transforms.RandomRotation(15),
-        transforms.RandomResizedCrop(64, scale=(0.8, 1.0)),
         transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-        transforms.ToTensor(),  # converts [0,255] PIL -> [0,1] tensor
+        transforms.ToTensor(),
+        transforms.Normalize(mean=imagenet_mean, std=imagenet_std),
     ])
 
-    # Validation: just resize+ToTensor
+    # Validation: just resize + normalize
     val_transform = transforms.Compose([
         transforms.Resize((64, 64)),
         transforms.ToTensor(),
+        transforms.Normalize(mean=imagenet_mean, std=imagenet_std),
     ])
 
     train_dataset = PKLDataset(train_pkl, transform=train_transform)
@@ -64,7 +69,7 @@ def get_dataloaders(train_pkl: str = "train.pkl",
         batch_size=batch_size,
         shuffle=True,
         num_workers=2,
-        pin_memory=False,   # MPS/CPU: no need for pinned memory
+        pin_memory=False,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -167,14 +172,21 @@ def main():
     num_classes = 15  # per assignment: 15 classes
     model = MyCNN(num_classes=num_classes).to(device)
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=1e-3,
         weight_decay=1e-4
     )
 
-    num_epochs = 40
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode="min",
+        factor=0.5,    # reduce LR by 0.5
+        patience=2,    # wait 2 epochs with no val_loss improvement
+    )
+
+    num_epochs = 60
     best_val_acc = 0.0
     epochs_no_improve = 0
     patience = 7
@@ -213,6 +225,13 @@ def main():
         print(f"Epoch [{epoch}/{num_epochs}] "
               f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} "
               f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
+
+        old_lr = optimizer.param_groups[0]["lr"]
+        scheduler.step(val_loss)
+        new_lr = optimizer.param_groups[0]["lr"]
+
+        if new_lr != old_lr:
+            print(f"⚠️  Learning rate reduced from {old_lr:.6f} → {new_lr:.6f}")
 
         # Check for improvement (for best model)
         improved = val_acc > best_val_acc

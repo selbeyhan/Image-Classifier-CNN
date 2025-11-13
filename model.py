@@ -52,7 +52,7 @@ class MyCNN(nn.Module):
             nn.Flatten(),
             nn.Linear(256 * 4 * 4, 512),
             nn.ReLU(inplace=True),
-            nn.Dropout(p=0.5),
+            nn.Dropout(p=0.4),
             nn.Linear(512, num_classes)
         )
 
