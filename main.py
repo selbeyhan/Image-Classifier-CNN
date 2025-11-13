@@ -1,3 +1,4 @@
+import os
 import random
 import numpy as np
 
@@ -8,6 +9,15 @@ from torchvision import transforms
 
 from dataset import PKLDataset
 from model import MyCNN
+
+
+# -----------------------------
+# Config
+# -----------------------------
+
+RESUME_TRAINING = True          # <-- set to False if you ever want to start fresh
+CHECKPOINT_PATH = "checkpoint.pth"
+BEST_MODEL_PATH = "model.pth"
 
 
 # -----------------------------
@@ -49,10 +59,20 @@ def get_dataloaders(train_pkl: str = "train.pkl",
     train_dataset = PKLDataset(train_pkl, transform=train_transform)
     val_dataset   = PKLDataset(val_pkl,   transform=val_transform)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size,
-                              shuffle=True, num_workers=2, pin_memory=True)
-    val_loader   = DataLoader(val_dataset, batch_size=batch_size,
-                              shuffle=False, num_workers=2, pin_memory=True)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=2,
+        pin_memory=False,   # MPS/CPU: no need for pinned memory
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=2,
+        pin_memory=False,
+    )
 
     print(f"Loaded {len(train_dataset)} training images, "
           f"{len(val_dataset)} validation images.")
@@ -115,16 +135,29 @@ def evaluate(model, dataloader, criterion, device):
 
 
 # -----------------------------
-# Main Training Loop
+# Main Training Loop (with resume)
 # -----------------------------
 
 def main():
     set_seed(42)
+    
+    try:
+        torch.set_float32_matmul_precision("high")
+    except Exception:
+        pass  # safe to ignore if unsupported
+        
+# Prefer MPS (Apple GPU) → then CUDA → fallback to CPU
+    if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        device = torch.device("mps")
+        print("Using device: MPS (Apple GPU)")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+        print("Using device: CUDA (NVIDIA GPU)")
+    else:
+        device = torch.device("cpu")
+        print("Using device: CPU")
+        print("Using device:", device)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print("Using device:", device)
-
-    # Adjust these if your files are named differently
     train_loader, val_loader = get_dataloaders(
         train_pkl="train.pkl",
         val_pkl="val.pkl",
@@ -143,13 +176,33 @@ def main():
 
     num_epochs = 40
     best_val_acc = 0.0
-    best_model_path = "model.pth"
-
-    # Early stopping
-    patience = 7
     epochs_no_improve = 0
+    patience = 7
 
-    for epoch in range(1, num_epochs + 1):
+    # -------------------------
+    # Resume logic
+    # -------------------------
+    start_epoch = 1
+    if RESUME_TRAINING and os.path.exists(CHECKPOINT_PATH):
+        print(f"🔁 Found checkpoint at {CHECKPOINT_PATH}. Resuming training...")
+        checkpoint = torch.load(CHECKPOINT_PATH, map_location=device)
+
+        model.load_state_dict(checkpoint["model_state"])
+        optimizer.load_state_dict(checkpoint["optimizer_state"])
+        best_val_acc = checkpoint.get("best_val_acc", 0.0)
+        epochs_no_improve = checkpoint.get("epochs_no_improve", 0)
+        last_epoch = checkpoint.get("epoch", 0)
+        start_epoch = last_epoch + 1
+
+        print(f"Resumed from epoch {last_epoch}, best_val_acc={best_val_acc:.4f}, "
+              f"epochs_no_improve={epochs_no_improve}")
+    else:
+        print("No checkpoint found or resume disabled. Starting from scratch.")
+
+    # -------------------------
+    # Training loop
+    # -------------------------
+    for epoch in range(start_epoch, num_epochs + 1):
         train_loss, train_acc = train_one_epoch(
             model, train_loader, optimizer, criterion, device
         )
@@ -161,22 +214,37 @@ def main():
               f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} "
               f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
 
-        # Check for improvement
-        if val_acc > best_val_acc:
+        # Check for improvement (for best model)
+        improved = val_acc > best_val_acc
+        if improved:
             best_val_acc = val_acc
             epochs_no_improve = 0
-            torch.save(model.state_dict(), best_model_path)
+            torch.save(model.state_dict(), BEST_MODEL_PATH)
             print(f"  ✅ New best model saved with Val Acc: {best_val_acc:.4f}")
         else:
             epochs_no_improve += 1
             print(f"  No improvement for {epochs_no_improve} epoch(s).")
 
+        # ---------------------
+        # Save checkpoint every epoch
+        # ---------------------
+        checkpoint = {
+            "epoch": epoch,
+            "model_state": model.state_dict(),
+            "optimizer_state": optimizer.state_dict(),
+            "best_val_acc": best_val_acc,
+            "epochs_no_improve": epochs_no_improve,
+        }
+        torch.save(checkpoint, CHECKPOINT_PATH)
+        print(f"  💾 Checkpoint saved at epoch {epoch}.")
+
+        # Early stopping
         if epochs_no_improve >= patience:
             print("Early stopping triggered.")
             break
 
     print(f"Training complete. Best Val Acc: {best_val_acc:.4f}")
-    print(f"Best model weights saved to: {best_model_path}")
+    print(f"Best model weights saved to: {BEST_MODEL_PATH}")
 
 
 if __name__ == "__main__":

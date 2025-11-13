@@ -2,6 +2,7 @@
 train.pkl
 val.pkl
 model.pth
+checkpoint.pth
 
 n# Byte-compiled / optimized / DLL files
 __pycache__/
